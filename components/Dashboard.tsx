@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import RundownRow from "@/components/RundownRow";
 import { fetchRundown, applyChange, type Project } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
@@ -150,6 +151,7 @@ export default function Dashboard({ role }: { role: string }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <Clock />
+          <Link href="/settings" className="btn">Settings</Link>
           <button className="btn" onClick={signOut}>Sign out</button>
         </div>
       </div>

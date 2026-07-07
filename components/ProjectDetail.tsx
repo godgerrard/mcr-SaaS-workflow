@@ -49,8 +49,16 @@ export default function ProjectDetail({
 }) {
   const [project, setProject] = useState<ProjectDetailRow>(initial);
   const [pulseStage, setPulseStage] = useState<string | null>(null);
+  const [reviewerNames, setReviewerNames] = useState<Record<string, string>>({});
   const supabase = createClient();
   const channelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    supabase.from("profiles").select("user_id, display_name").then(({ data }) => {
+      if (data) setReviewerNames(Object.fromEntries(data.map((p) => [p.user_id, p.display_name])));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const refetchApprovals = async () => {
     const { data } = await supabase.from("approvals").select("*").eq("project_id", project.id);
@@ -180,6 +188,7 @@ export default function ProjectDetail({
         {approvalsByNewest.map((a) => (
           <div key={a.id} className="row-main">
             <span>{a.decision}</span>
+            <span>{reviewerNames[a.reviewer] ?? a.reviewer.slice(0, 8)}</span>
             <span>{a.notes ?? "—"}</span>
             <span>{new Date(a.created_at).toLocaleString("en-GB")}</span>
           </div>

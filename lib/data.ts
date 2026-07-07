@@ -10,6 +10,12 @@ export type Project = {
   budget_entries: { amount: number }[];
 };
 
+export type Profile = { user_id: string; display_name: string; email: string };
+
+export type Invite = {
+  id: string; email: string; role: string; stage: string | null; created_at: string;
+};
+
 // Detail page shape: full rows (org_id + approvals) for the single-project view.
 export type ProjectDetailRow = Omit<Project, "budget_entries"> & {
   org_id: string;
