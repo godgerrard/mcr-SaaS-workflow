@@ -18,7 +18,24 @@ async function makeUser(email) {
   return list.users.find((u) => u.email === email).id;
 }
 
+async function wipeDemoData() {
+  const { data: orgs, error } = await admin
+    .from("orgs").select("id").in("name", ["Demo Broadcast Co", "Other Org"]);
+  if (error) throw error;
+  if (!orgs?.length) return;
+  const ids = orgs.map((o) => o.id);
+  // children first in case any FK lacks on-delete cascade
+  for (const table of ["budget_entries", "stage_tasks", "approvals", "projects", "org_members"]) {
+    const { error: delErr } = await admin.from(table).delete().in("org_id", ids);
+    if (delErr) throw delErr;
+  }
+  const { error: orgErr } = await admin.from("orgs").delete().in("id", ids);
+  if (orgErr) throw orgErr;
+  console.log("wiped stale demo orgs:", ids.length);
+}
+
 async function main() {
+  await wipeDemoData();
   const ceo = await makeUser("ceo@demo.mcr");
   const producer = await makeUser("producer@demo.mcr");
   const crewEdit = await makeUser("crew-edit@demo.mcr");
