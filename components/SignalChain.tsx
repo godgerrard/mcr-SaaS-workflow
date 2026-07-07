@@ -67,7 +67,7 @@ export default function SignalChain({
             </div>
             {i < STAGES.length - 1 && (
               <div className="connector">
-                {pulseStage === stage && <div className="pulse" key={Date.now()} />}
+                {pulseStage === stage && <div className="pulse" key="pulse" />}
               </div>
             )}
           </React.Fragment>

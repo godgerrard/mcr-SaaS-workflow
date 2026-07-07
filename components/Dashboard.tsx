@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import RundownRow from "@/components/RundownRow";
-import { fetchRundown, type Project } from "@/lib/data";
+import { fetchRundown, applyChange, type Project } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 function Clock() {
   const [now, setNow] = useState(new Date());
@@ -65,6 +66,8 @@ export default function Dashboard({ role }: { role: string }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
+  const wasErrored = useRef(false);
+  const channelRef = useRef<RealtimeChannel | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -76,11 +79,57 @@ export default function Dashboard({ role }: { role: string }) {
   }, []);
 
   useEffect(() => {
-    load();
-    // ponytail: polling stays until Phase 2 Realtime
-    const t = setInterval(load, 5000);
-    return () => clearInterval(t);
-  }, [load]);
+    let cancelled = false;
+    let orgId: string | null = null;
+
+    (async () => {
+      load();
+      const { data: membership } = await supabase
+        .from("org_members").select("org_id").limit(1).maybeSingle();
+      if (cancelled) return;
+      orgId = membership?.org_id ?? null;
+
+      const filter = orgId ? { filter: `org_id=eq.${orgId}` } : {};
+      const channel = supabase
+        .channel("dashboard-rundown")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "projects", ...filter },
+          (payload) => setProjects((prev) => applyChange(prev, payload))
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "stage_tasks", ...filter },
+          (payload) => setProjects((prev) => applyChange(prev, payload))
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "budget_entries", ...filter },
+          (payload) => setProjects((prev) => applyChange(prev, payload))
+        )
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED" && wasErrored.current) {
+            wasErrored.current = false;
+            load(); // reconnect refetch
+          }
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            wasErrored.current = true;
+          }
+        });
+
+      if (cancelled) {
+        supabase.removeChannel(channel);
+        return;
+      }
+      channelRef.current = channel;
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const signOut = async () => {
     await supabase.auth.signOut();

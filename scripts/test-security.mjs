@@ -75,7 +75,67 @@ async function main() {
     .eq("project_id", editTask.project_id).eq("stage", "graphics").single();
   assert.equal(gfx.status, "in_progress", "next stage must auto-activate");
 
+  // 6. REALTIME TENANT ISOLATION: outsider's channel receives zero events for
+  // demo-org mutations; a positive-control channel on the demo org confirms
+  // realtime is actually delivering (guards against a false pass from a
+  // misconfigured publication where nothing is delivered to anyone).
+  const outsiderEvents = [];
+  const ceoEvents = [];
+
+  const waitSubscribed = (channel) =>
+    new Promise((resolve, reject) => {
+      channel.subscribe((status, err) => {
+        if (status === "SUBSCRIBED") resolve();
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          reject(err ?? new Error(`channel failed: ${status}`));
+        }
+      });
+    });
+
+  const outsiderChannel = outsider.channel("test-outsider");
+  for (const table of ["projects", "stage_tasks", "budget_entries"]) {
+    outsiderChannel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table },
+      (payload) => outsiderEvents.push(payload)
+    );
+  }
+
+  const ceoChannel = ceo.channel("test-ceo-positive-control");
+  for (const table of ["projects", "stage_tasks", "budget_entries"]) {
+    ceoChannel.on(
+      "postgres_changes",
+      { event: "*", schema: "public", table },
+      (payload) => ceoEvents.push(payload)
+    );
+  }
+
+  await Promise.all([waitSubscribed(outsiderChannel), waitSubscribed(ceoChannel)]);
+
+  const { data: probeProjectId, error: createErr } = await ceo.rpc("create_project", {
+    p_title: "Realtime Probe Segment", p_client: null, p_budget: 1000,
+  });
+  assert.equal(createErr, null, `create_project failed: ${createErr?.message}`);
+  const { error: approveErr } = await ceo.rpc("approve_project", { p_project: probeProjectId });
+  assert.equal(approveErr, null, `probe approve failed: ${approveErr?.message}`);
+  const { data: probeProject } = await ceo.from("projects").select("org_id").eq("id", probeProjectId).single();
+  const { error: budgetErr } = await ceo.from("budget_entries")
+    .insert({ project_id: probeProjectId, org_id: probeProject.org_id, category: "probe", amount: 42 });
+  assert.equal(budgetErr, null, `probe budget insert failed: ${budgetErr?.message}`);
+
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+
+  assert.equal(outsiderEvents.length, 0, "LEAK: outsider received realtime events for another org");
+  assert.ok(ceoEvents.length > 0, "realtime not delivering — test would false-pass");
+
+  await outsider.removeChannel(outsiderChannel);
+  await ceo.removeChannel(ceoChannel);
+  await outsider.realtime.disconnect();
+  await ceo.realtime.disconnect();
+
   console.log("ALL SECURITY CHECKS PASSED");
 }
 
-main().catch((e) => { console.error("FAILED:", e.message); process.exit(1); });
+main()
+  .then(() => process.exit(0))
+  .catch((e) => { console.error("FAILED:", e.message); process.exit(1); });

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import SignalChain, { completeTask } from "@/components/SignalChain";
 import { STATUS_META } from "@/lib/stages";
 import { createClient } from "@/lib/supabase/client";
@@ -67,7 +68,12 @@ export default function RundownRow({
         <div className={`tally ${meta.tally !== "off" ? `lit-${meta.tally}` : ""}`} />
         <div className="seg-no">{String(index + 1).padStart(2, "0")}</div>
         <div className="row-title">
-          <div className="name">{project.title}</div>
+          <div className="name">
+            {project.title}{" "}
+            <Link href={`/projects/${project.id}`} className="open-link" onClick={(e) => e.stopPropagation()}>
+              OPEN
+            </Link>
+          </div>
           {project.client && <div className="client">{project.client}</div>}
         </div>
         <div className={`status-pill ${project.status}`}>{meta.label}</div>

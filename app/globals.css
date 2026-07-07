@@ -260,6 +260,15 @@ button:focus-visible {
   color: var(--text-dim);
   letter-spacing: 0.03em;
 }
+.open-link {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+  text-decoration: none;
+}
+.open-link:hover { color: var(--text-faint); text-decoration: underline; }
 
 .status-pill {
   font-family: var(--font-mono);

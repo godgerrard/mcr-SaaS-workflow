@@ -1,10 +1,20 @@
 import { createClient } from "@/lib/supabase/client";
 
+export { applyChange } from "@/lib/reducer.mjs";
+export type { RealtimeChange } from "@/lib/reducer";
+
 export type Project = {
   id: string; title: string; client: string | null; status: string;
   current_stage: string | null; budget_allocated: number; deadline: string | null;
   stage_tasks: { id: string; stage: string; status: string; data: Record<string, unknown> }[];
   budget_entries: { amount: number }[];
+};
+
+// Detail page shape: full rows (org_id + approvals) for the single-project view.
+export type ProjectDetailRow = Omit<Project, "budget_entries"> & {
+  org_id: string;
+  budget_entries: { id: string; category: string; amount: number; created_at: string }[];
+  approvals: { id: string; reviewer: string; decision: string; notes: string | null; created_at: string }[];
 };
 
 export async function fetchRundown(): Promise<Project[]> {
