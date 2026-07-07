@@ -20,10 +20,19 @@ export async function POST(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 403 });
 
   // Invite row exists; the email is best-effort (server-only admin client).
+  // In production the service key is deliberately NOT deployed: the invitee
+  // signs in at the app themselves and the invite is claimed at onboarding.
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    return NextResponse.json({
+      ok: true, emailSent: false,
+      message: "invite created — ask them to sign in at the app to claim it",
+    });
+  }
   const { origin } = new URL(request.url);
   const admin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    serviceKey,
     { auth: { autoRefreshToken: false, persistSession: false } }
   );
   const { error: mailErr } = await admin.auth.admin.inviteUserByEmail(email, {

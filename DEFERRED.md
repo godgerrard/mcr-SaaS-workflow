@@ -4,6 +4,7 @@ Things noticed and deliberately parked. Revisit before/at pilot rollout.
 Convention: anything non-blocking discovered during a session gets added here instead of interrupting the build.
 
 ## Auth / access
+- **Invite emails not sent in production** — decision reversed at deploy time (2026-07-08): the service-role key is deliberately NOT deployed to Vercel. `/api/invites` still creates the invite row (RLS-gated); the UI tells the inviter to have the person sign in at the app, where the pending invite is claimed at onboarding. To enable real invite emails later: add `SUPABASE_SERVICE_ROLE_KEY` to Vercel (Sensitive, Production) and redeploy — the code path already exists. Pairs with the custom-SMTP item below.
 - **Google sign-in not enabled** — app code supports it; Supabase provider was never configured. Needs a Google Cloud OAuth client (redirect URI `https://mtpqhrsmwpaxcxpsmeqd.supabase.co/auth/v1/callback`) pasted into Supabase → Sign In/Providers → Google. Magic link covers the pilot until someone asks.
 - **Supabase built-in SMTP rate limits** — default email sender allows only a handful of magic links per hour. Fine for testing; a real pilot team on magic-link-only will hit it. Configure custom SMTP (Resend/Postmark/etc.) before handover.
 - **Two stray Gmail sign-ups** (`dasddo@`, `liottaray658@`) with no org membership — they'll route to /onboarding. With Phase 4 they can now be invited properly or deleted; decide at pilot rollout.
