@@ -12,8 +12,12 @@ Multi-tenant broadcast production workflow. Spec: ../docs/superpowers/specs/2026
 - `npm run test:security` — RLS isolation, role gates, state machine. Must pass before any release.
 
 ## Phase status
-- [x] Phase 1: Foundation (this)
-- [ ] Phase 2: Realtime + project detail
-- [ ] Phase 3: Assets
-- [ ] Phase 4: Billing + onboarding invites
-- [ ] Phase 5: Hardening (Playwright, CI, Sentry)
+- [x] Phase 1: Foundation
+- [x] Phase 2: Realtime + project detail
+- [x] Phase 3: Deploy to Vercel
+- [x] Phase 4: Accounts & roles (profiles, invites, member management)
+- [ ] Phase 5: Assets
+- [ ] Phase 6: Hardening (Playwright, CI, Sentry)
+- [ ] Phase 7: Pilot rollout
+
+Billing was cut from the roadmap for the single-pilot model (see DEFERRED.md).

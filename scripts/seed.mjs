@@ -24,8 +24,17 @@ async function wipeDemoData() {
   if (error) throw error;
   if (!orgs?.length) return;
   const ids = orgs.map((o) => o.id);
+  // profiles of demo members first (keyed by user_id, not org_id)
+  const { data: members, error: memErr } = await admin
+    .from("org_members").select("user_id").in("org_id", ids);
+  if (memErr) throw memErr;
+  if (members?.length) {
+    const { error: profErr } = await admin
+      .from("profiles").delete().in("user_id", members.map((m) => m.user_id));
+    if (profErr) throw profErr;
+  }
   // children first in case any FK lacks on-delete cascade
-  for (const table of ["budget_entries", "stage_tasks", "approvals", "projects", "org_members"]) {
+  for (const table of ["budget_entries", "stage_tasks", "approvals", "projects", "invites", "org_members"]) {
     const { error: delErr } = await admin.from(table).delete().in("org_id", ids);
     if (delErr) throw delErr;
   }
@@ -51,6 +60,13 @@ async function main() {
     { user_id: crewEdit, org_id: org.id, role: "crew", stage: "edit" },
   ]);
   if (memErr) throw memErr;
+
+  const { error: profErr } = await admin.from("profiles").upsert([
+    { user_id: ceo, display_name: "Demo CEO", email: "ceo@demo.mcr" },
+    { user_id: producer, display_name: "Demo Producer", email: "producer@demo.mcr" },
+    { user_id: crewEdit, display_name: "Edit Crew", email: "crew-edit@demo.mcr" },
+  ]);
+  if (profErr) throw profErr;
 
   await admin.from("projects").insert({
     org_id: org.id, title: "Morning News Package", client: "Channel One",

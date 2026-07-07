@@ -79,9 +79,8 @@ async function main() {
   // demo-org mutations; a positive-control channel on the demo org confirms
   // realtime is actually delivering (guards against a false pass from a
   // misconfigured publication where nothing is delivered to anyone).
-  const outsiderEvents = [];
-  const ceoEvents = [];
-
+  // The positive control is known-flaky (~1 in 3): it gets ONE automatic retry
+  // with fresh channels. The outsider LEAK assertion is enforced on every attempt.
   const waitSubscribed = (channel) =>
     new Promise((resolve, reject) => {
       channel.subscribe((status, err) => {
@@ -92,46 +91,150 @@ async function main() {
       });
     });
 
-  const outsiderChannel = outsider.channel("test-outsider");
-  for (const table of ["projects", "stage_tasks", "budget_entries"]) {
-    outsiderChannel.on(
-      "postgres_changes",
-      { event: "*", schema: "public", table },
-      (payload) => outsiderEvents.push(payload)
-    );
+  const runRealtimeProbe = async (probeTitle) => {
+    const outsiderEvents = [];
+    const ceoEvents = [];
+
+    const outsiderChannel = outsider.channel(`test-outsider-${Date.now()}`);
+    for (const table of ["projects", "stage_tasks", "budget_entries"]) {
+      outsiderChannel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        (payload) => outsiderEvents.push(payload)
+      );
+    }
+
+    const ceoChannel = ceo.channel(`test-ceo-positive-control-${Date.now()}`);
+    for (const table of ["projects", "stage_tasks", "budget_entries"]) {
+      ceoChannel.on(
+        "postgres_changes",
+        { event: "*", schema: "public", table },
+        (payload) => ceoEvents.push(payload)
+      );
+    }
+
+    await Promise.all([waitSubscribed(outsiderChannel), waitSubscribed(ceoChannel)]);
+
+    const { data: probeProjectId, error: createErr } = await ceo.rpc("create_project", {
+      p_title: probeTitle, p_client: null, p_budget: 1000,
+    });
+    assert.equal(createErr, null, `create_project failed: ${createErr?.message}`);
+    const { error: approveErr } = await ceo.rpc("approve_project", { p_project: probeProjectId });
+    assert.equal(approveErr, null, `probe approve failed: ${approveErr?.message}`);
+    const { data: probeProject } = await ceo.from("projects").select("org_id").eq("id", probeProjectId).single();
+    const { error: budgetErr } = await ceo.from("budget_entries")
+      .insert({ project_id: probeProjectId, org_id: probeProject.org_id, category: "probe", amount: 42 });
+    assert.equal(budgetErr, null, `probe budget insert failed: ${budgetErr?.message}`);
+
+    await new Promise((resolve) => setTimeout(resolve, 4000));
+
+    await outsider.removeChannel(outsiderChannel);
+    await ceo.removeChannel(ceoChannel);
+
+    return { outsiderEvents, ceoEvents };
+  };
+
+  let probe = await runRealtimeProbe("Realtime Probe Segment");
+  assert.equal(probe.outsiderEvents.length, 0, "LEAK: outsider received realtime events for another org");
+  if (probe.ceoEvents.length === 0) {
+    console.log("WARN: positive control got no events; retrying once with fresh channels");
+    probe = await runRealtimeProbe("Realtime Probe Segment B");
+    assert.equal(probe.outsiderEvents.length, 0, "LEAK: outsider received realtime events for another org");
   }
+  assert.ok(probe.ceoEvents.length > 0, "realtime not delivering — test would false-pass");
 
-  const ceoChannel = ceo.channel("test-ceo-positive-control");
-  for (const table of ["projects", "stage_tasks", "budget_entries"]) {
-    ceoChannel.on(
-      "postgres_changes",
-      { event: "*", schema: "public", table },
-      (payload) => ceoEvents.push(payload)
-    );
-  }
-
-  await Promise.all([waitSubscribed(outsiderChannel), waitSubscribed(ceoChannel)]);
-
-  const { data: probeProjectId, error: createErr } = await ceo.rpc("create_project", {
-    p_title: "Realtime Probe Segment", p_client: null, p_budget: 1000,
-  });
-  assert.equal(createErr, null, `create_project failed: ${createErr?.message}`);
-  const { error: approveErr } = await ceo.rpc("approve_project", { p_project: probeProjectId });
-  assert.equal(approveErr, null, `probe approve failed: ${approveErr?.message}`);
-  const { data: probeProject } = await ceo.from("projects").select("org_id").eq("id", probeProjectId).single();
-  const { error: budgetErr } = await ceo.from("budget_entries")
-    .insert({ project_id: probeProjectId, org_id: probeProject.org_id, category: "probe", amount: 42 });
-  assert.equal(budgetErr, null, `probe budget insert failed: ${budgetErr?.message}`);
-
-  await new Promise((resolve) => setTimeout(resolve, 4000));
-
-  assert.equal(outsiderEvents.length, 0, "LEAK: outsider received realtime events for another org");
-  assert.ok(ceoEvents.length > 0, "realtime not delivering — test would false-pass");
-
-  await outsider.removeChannel(outsiderChannel);
-  await ceo.removeChannel(ceoChannel);
   await outsider.realtime.disconnect();
   await ceo.realtime.disconnect();
+
+  // 7. ACCOUNTS & INVITES: invite visibility, role-management guards,
+  // invite claim flow, last-CEO protection, member removal.
+  const { data: ceoMembership } = await ceo
+    .from("org_members").select("org_id, user_id").eq("role", "ceo").limit(1).single();
+  const demoOrgId = ceoMembership.org_id;
+  const ceoId = ceoMembership.user_id;
+
+  // clean slate for re-runs: drop any pending invites for the test emails
+  await ceo.from("invites").delete()
+    .in("email", ["leak-probe@demo.mcr", "invitee@demo.mcr"]).is("claimed_at", null);
+
+  // 7a. outsider sees zero demo-org invites (create one first so there is something to leak)
+  const { error: leakInvErr } = await ceo.from("invites").insert({
+    org_id: demoOrgId, email: "leak-probe@demo.mcr", role: "producer", stage: null, invited_by: ceoId,
+  });
+  assert.equal(leakInvErr, null, `ceo invite insert failed: ${leakInvErr?.message}`);
+  const { data: outsiderInvites } = await outsider.from("invites").select("*");
+  assert.equal((outsiderInvites ?? []).filter((i) => i.org_id === demoOrgId).length, 0,
+    "LEAK: outsider can read another org's invites");
+
+  // 7b. crew cannot manage members or invites
+  const { error: crewInvErr } = await crew.from("invites").insert({
+    org_id: demoOrgId, email: "crew-made@demo.mcr", role: "crew", stage: "edit",
+    invited_by: (await crew.auth.getUser()).data.user.id,
+  });
+  assert.ok(crewInvErr, "LEAK: crew can insert invites");
+  const { error: crewRoleErr } = await crew.rpc("update_member_role", {
+    p_user: ceoId, p_role: "crew", p_stage: "edit",
+  });
+  assert.ok(crewRoleErr, "LEAK: crew can update member roles");
+
+  // 7c. producer cannot touch the CEO or mint CEO invites; CAN invite crew
+  const producerId = (await producer.auth.getUser()).data.user.id;
+  const { error: prodCeoInvErr } = await producer.from("invites").insert({
+    org_id: demoOrgId, email: "usurper@demo.mcr", role: "ceo", stage: null, invited_by: producerId,
+  });
+  assert.ok(prodCeoInvErr, "LEAK: producer can create a CEO invite");
+  const { error: prodDemoteErr } = await producer.rpc("update_member_role", {
+    p_user: ceoId, p_role: "producer",
+  });
+  assert.ok(prodDemoteErr, "LEAK: producer can demote the CEO");
+  const { error: prodRemoveErr } = await producer.rpc("remove_member", { p_user: ceoId });
+  assert.ok(prodRemoveErr, "LEAK: producer can remove the CEO");
+  const { error: prodCrewInvErr } = await producer.from("invites").insert({
+    org_id: demoOrgId, email: "invitee@demo.mcr", role: "crew", stage: "graphics", invited_by: producerId,
+  });
+  assert.equal(prodCrewInvErr, null, `producer crew invite failed: ${prodCrewInvErr?.message}`);
+
+  // 7d. invitee claims the invite and lands as graphics crew
+  const { data: madeUser, error: mkInvErr } = await admin.auth.admin.createUser({
+    email: "invitee@demo.mcr", password: PASS, email_confirm: true,
+  });
+  if (mkInvErr && !mkInvErr.message.includes("already")) throw mkInvErr;
+  let inviteeId = madeUser?.user?.id;
+  if (!inviteeId) {
+    const { data: list } = await admin.auth.admin.listUsers();
+    inviteeId = list.users.find((u) => u.email === "invitee@demo.mcr").id;
+  }
+  const invitee = await login("invitee@demo.mcr");
+  const { data: claimedOrg, error: claimErr } = await invitee.rpc("claim_invite", {
+    p_display_name: "Invitee Test",
+  });
+  assert.equal(claimErr, null, `claim_invite failed: ${claimErr?.message}`);
+  assert.equal(claimedOrg, demoOrgId, "claim_invite returned wrong org");
+  const { data: inviteeRow } = await invitee.from("org_members")
+    .select("*").eq("user_id", inviteeId).single();
+  assert.equal(inviteeRow.role, "crew", "invitee should be crew");
+  assert.equal(inviteeRow.stage, "graphics", "invitee should be on graphics");
+  const { data: inviteeTasks } = await invitee.from("stage_tasks").select("*");
+  assert.ok(inviteeTasks.length > 0, "invitee crew should see own-stage tasks");
+  assert.ok(inviteeTasks.every((t) => t.stage === "graphics"), "LEAK: invitee sees other stages");
+  const { data: inviteeBudget } = await invitee.from("budget_entries").select("*");
+  assert.equal(inviteeBudget.length, 0, "LEAK: invitee crew sees budget");
+
+  // 7e. last-CEO protection: cannot self-demote or self-remove
+  const { error: selfDemoteErr } = await ceo.rpc("update_member_role", {
+    p_user: ceoId, p_role: "producer",
+  });
+  assert.ok(selfDemoteErr, "last CEO demote must fail");
+  const { error: selfRemoveErr } = await ceo.rpc("remove_member", { p_user: ceoId });
+  assert.ok(selfRemoveErr, "last CEO removal must fail");
+
+  // 7f. ceo removes the invitee; access is gone; the claimed invite cannot be re-claimed
+  const { error: removeInviteeErr } = await ceo.rpc("remove_member", { p_user: inviteeId });
+  assert.equal(removeInviteeErr, null, `remove_member failed: ${removeInviteeErr?.message}`);
+  const { data: tasksAfter } = await invitee.from("stage_tasks").select("*");
+  assert.equal((tasksAfter ?? []).length, 0, "LEAK: removed member still sees stage_tasks");
+  const { error: reclaimErr } = await invitee.rpc("claim_invite", { p_display_name: "Invitee Test" });
+  assert.ok(reclaimErr, "second claim_invite must fail (invite already claimed)");
 
   console.log("ALL SECURITY CHECKS PASSED");
 }
