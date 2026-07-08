@@ -16,7 +16,7 @@ Multi-tenant broadcast production workflow. Spec: ../docs/superpowers/specs/2026
 - [x] Phase 2: Realtime + project detail
 - [x] Phase 3: Deploy to Vercel
 - [x] Phase 4: Accounts & roles (profiles, invites, member management)
-- [ ] Phase 5: Assets
+- [x] Phase 5: Assets
 - [ ] Phase 6: Hardening (Playwright, CI, Sentry)
 - [ ] Phase 7: Pilot rollout
 

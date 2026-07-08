@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import SignalChain, { completeTask } from "@/components/SignalChain";
-import { STATUS_META } from "@/lib/stages";
+import { STAGES, STAGE_LABEL, STATUS_META } from "@/lib/stages";
 import { createClient } from "@/lib/supabase/client";
 import { burnRate, daysToDeadline, applyChange, type ProjectDetailRow } from "@/lib/data";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -37,6 +37,69 @@ function AddBudgetEntryForm({
       <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
       <button className="btn btn-primary" type="submit">Add entry</button>
     </form>
+  );
+}
+
+function StageAssets({
+  orgId,
+  projectId,
+  stage,
+}: {
+  orgId: string;
+  projectId: string;
+  stage: string;
+}) {
+  const [files, setFiles] = useState<{ name: string; created_at: string | null }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const supabase = createClient();
+  const prefix = `${orgId}/${projectId}/${stage}`;
+
+  const refresh = async () => {
+    const { data } = await supabase.storage.from("assets").list(prefix);
+    setFiles(data ?? []);
+  };
+
+  useEffect(() => {
+    supabase.storage.from("assets").list(prefix).then(({ data }) => setFiles(data ?? []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefix]);
+
+  const onUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    const { error: upErr } = await supabase.storage.from("assets").upload(`${prefix}/${file.name}`, file);
+    if (upErr) setError(upErr.message);
+    else refresh();
+  };
+
+  const download = async (name: string) => {
+    setError(null);
+    const { data, error: signErr } = await supabase.storage
+      .from("assets")
+      .createSignedUrl(`${prefix}/${name}`, 60);
+    if (signErr) setError(signErr.message);
+    else window.open(data.signedUrl, "_blank");
+  };
+
+  return (
+    <div className="rundown" style={{ marginBottom: 14 }}>
+      <div className="stage-data" style={{ marginTop: 0 }}>
+        <span>{STAGE_LABEL[stage as keyof typeof STAGE_LABEL] ?? stage}</span>
+      </div>
+      {files.map((f) => (
+        <div key={f.name} className="row-main" onClick={() => download(f.name)}>
+          <span>{f.name}</span>
+          <span>{f.created_at ? new Date(f.created_at).toLocaleString("en-GB") : "—"}</span>
+        </div>
+      ))}
+      {files.length === 0 && <div className="empty-state">No assets yet.</div>}
+      {error && <div className="error">{error}</div>}
+      <div className="segment-slip">
+        <input type="file" onChange={onUpload} />
+      </div>
+    </div>
   );
 }
 
@@ -166,6 +229,11 @@ export default function ProjectDetail({
           pulseStage={pulseStage}
         />
       )}
+
+      <h2>Assets</h2>
+      {STAGES.map((stage) => (
+        <StageAssets key={stage} orgId={project.org_id} projectId={project.id} stage={stage} />
+      ))}
 
       <h2>Budget log</h2>
       <div className="rundown">

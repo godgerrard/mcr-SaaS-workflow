@@ -236,6 +236,60 @@ async function main() {
   const { error: reclaimErr } = await invitee.rpc("claim_invite", { p_display_name: "Invitee Test" });
   assert.ok(reclaimErr, "second claim_invite must fail (invite already claimed)");
 
+  // 8. ASSET STORAGE ISOLATION: private "assets" bucket, per-stage prefixes
+  // {org_id}/{project_id}/{stage}/{filename}. RLS: ceo/producer read+write all
+  // stages of their org; crew only their own stage; no update/delete (immutable).
+  const base = `${demoOrgId}/${proposed.id}`;
+  const ceoPath = `${base}/camera/sec8-ceo.txt`;
+  const crewPath = `${base}/edit/sec8-crew.txt`;
+  // cleanup at section START (admin bypasses RLS) so re-runs stay clean even
+  // after a mid-section failure on a previous run
+  await admin.storage.from("assets").remove([ceoPath, crewPath]);
+  const probeFile = () => new Blob(["probe"]);
+
+  // 8a. ceo uploads to camera
+  const { error: ceoUpErr } = await ceo.storage.from("assets").upload(ceoPath, probeFile());
+  assert.equal(ceoUpErr, null, `ceo upload failed: ${ceoUpErr?.message}`);
+
+  // 8b. crew uploads to own stage; blocked on another stage
+  const { error: crewUpErr } = await crew.storage.from("assets").upload(crewPath, probeFile());
+  assert.equal(crewUpErr, null, `crew own-stage upload failed: ${crewUpErr?.message}`);
+  const { error: crewWrongErr } = await crew.storage.from("assets")
+    .upload(`${base}/camera/sec8-crew-wrong.txt`, probeFile());
+  assert.ok(crewWrongErr, "LEAK: crew can upload to another stage");
+
+  // 8c. crew lists another stage -> 0 rows; own stage -> sees own file
+  const { data: crewCamList } = await crew.storage.from("assets").list(`${base}/camera`);
+  assert.equal((crewCamList ?? []).length, 0, "LEAK: crew lists another stage's assets");
+  const { data: crewEditList } = await crew.storage.from("assets").list(`${base}/edit`);
+  assert.ok((crewEditList ?? []).some((f) => f.name === "sec8-crew.txt"),
+    "crew should list own-stage assets");
+
+  // 8d. crew cannot sign an object outside their stage
+  const { error: crewSignErr } = await crew.storage.from("assets").createSignedUrl(ceoPath, 60);
+  assert.ok(crewSignErr, "LEAK: crew can sign another stage's object");
+
+  // 8e. outsider: list -> 0 rows, upload rejected, sign fails
+  const { data: outsiderList } = await outsider.storage.from("assets").list(`${base}/camera`);
+  assert.equal((outsiderList ?? []).length, 0, "LEAK: outsider lists another org's assets");
+  const { error: outsiderUpErr } = await outsider.storage.from("assets")
+    .upload(`${base}/camera/sec8-outsider.txt`, probeFile());
+  assert.ok(outsiderUpErr, "LEAK: outsider can upload into another org");
+  const { error: outsiderSignErr } = await outsider.storage.from("assets").createSignedUrl(ceoPath, 60);
+  assert.ok(outsiderSignErr, "LEAK: outsider can sign another org's object");
+
+  // 8f. positive control: ceo signs own file AND the URL actually serves it
+  // (guards deny-asserts above from false-passing on a broken bucket)
+  const { data: signed, error: ceoSignErr } = await ceo.storage.from("assets").createSignedUrl(ceoPath, 60);
+  assert.equal(ceoSignErr, null, `ceo sign failed: ${ceoSignErr?.message}`);
+  const signedRes = await fetch(signed.signedUrl);
+  assert.ok(signedRes.ok, `signed URL fetch failed: HTTP ${signedRes.status}`);
+
+  // 8g. immutability: overwrite with upsert must be rejected (no update policy)
+  const { error: upsertErr } = await ceo.storage.from("assets")
+    .upload(ceoPath, probeFile(), { upsert: true });
+  assert.ok(upsertErr, "LEAK: assets are overwritable (upsert succeeded)");
+
   console.log("ALL SECURITY CHECKS PASSED");
 }
 
