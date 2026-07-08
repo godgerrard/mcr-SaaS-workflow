@@ -12,6 +12,8 @@ Convention: anything non-blocking discovered during a session gets added here in
 - **Demo users cleanup before pilot** — `*@demo.mcr` / `ceo@other.mcr` (password `demo-pass-123`) exist for the test harness; Phase 4 added `invitee@demo.mcr` (security suite section 7) and `browser-test@demo.mcr` (manual browser verification). Decide at rollout: keep (tests need them) but confirm they stay isolated from the pilot org, or move tests to a staging project.
 
 ## Infra / deploy
+- **Sentry source-map upload deferred** — needs `SENTRY_AUTH_TOKEN` + `withSentryConfig`; wire when the DSN is in use and stack traces matter. Runtime capture works without it.
+- **CI runs against the shared live DB** — serialized via the `ci-live-db` concurrency group (`cancel-in-progress: false`). Move to a staging Supabase project if runs start colliding.
 - **Vercel Git auto-deploy not connected** — Vercel GitHub App isn't installed on the `godgerrard` account. Until then: `npx vercel deploy --prod` from `mcr/`. One click in Vercel project → Settings → Git when wanted.
 - **Custom domain** — pilot runs on `broadcast-workflow.vercel.app`. Buy/attach a real domain when branding matters (also update Supabase Site URL + redirect list then).
 - **Repo naming** — GitHub repo `broadcast-workflow` holds the MCR SaaS; the old Express MVP lives in the unrelated local folder `LAB/broadcast-workflow`. Rename repo to `mcr` or archive/delete the local MVP folder to kill the ambiguity.
