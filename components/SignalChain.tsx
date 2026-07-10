@@ -31,11 +31,15 @@ export default function SignalChain({
   tasks,
   onAdvance,
   pulseStage,
+  role,
+  myStage,
 }: {
   project: Project;
   tasks: Task[];
   onAdvance: (task: Task) => void;
   pulseStage: string | null;
+  role: string;
+  myStage: string | null;
 }) {
   return (
     <div className="chain">
@@ -50,7 +54,7 @@ export default function SignalChain({
                 <div className="bulb" />
                 <div className="stage-label">{STAGE_LABEL[stage]}</div>
               </div>
-              {task && status === "in_progress" && (
+              {task && status === "in_progress" && (role !== "crew" || myStage === stage) && (
                 <button className="lamp-action" onClick={() => onAdvance(task)}>
                   Mark done
                 </button>

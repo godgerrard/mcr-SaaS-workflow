@@ -20,12 +20,16 @@ function AddBudgetEntryForm({
   const [amount, setAmount] = useState("");
   const supabase = createClient();
 
+  const [formError, setFormError] = useState<string | null>(null);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!category.trim() || !amount) return;
-    await supabase.from("budget_entries").insert({
+    setFormError(null);
+    const { error } = await supabase.from("budget_entries").insert({
       project_id: projectId, org_id: orgId, category, amount: Number(amount),
     });
+    if (error) { setFormError(error.message); return; }
     setCategory("");
     setAmount("");
     onAdded();
@@ -36,6 +40,7 @@ function AddBudgetEntryForm({
       <input placeholder="Category" value={category} onChange={(e) => setCategory(e.target.value)} />
       <input type="number" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
       <button className="btn btn-primary" type="submit">Add entry</button>
+      {formError && <p className="error">{formError}</p>}
     </form>
   );
 }
@@ -106,12 +111,16 @@ function StageAssets({
 export default function ProjectDetail({
   project: initial,
   role,
+  myStage,
 }: {
   project: ProjectDetailRow;
   role: string;
+  myStage: string | null;
 }) {
   const [project, setProject] = useState<ProjectDetailRow>(initial);
   const [pulseStage, setPulseStage] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [reviewerNames, setReviewerNames] = useState<Record<string, string>>({});
   const supabase = createClient();
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -171,14 +180,23 @@ export default function ProjectDetail({
   }, [project.id]);
 
   const decide = async (decision: "approve" | "reject" | "hold") => {
-    if (decision === "approve") await supabase.rpc("approve_project", { p_project: project.id });
-    if (decision === "reject") await supabase.rpc("reject_project", { p_project: project.id, p_notes: null });
-    if (decision === "hold") await supabase.rpc("hold_project", { p_project: project.id, p_notes: null });
+    setActionError(null);
+    const p_notes = notes.trim() || null;
+    const { error } =
+      decision === "approve"
+        ? await supabase.rpc("approve_project", { p_project: project.id })
+        : decision === "reject"
+          ? await supabase.rpc("reject_project", { p_project: project.id, p_notes })
+          : await supabase.rpc("hold_project", { p_project: project.id, p_notes });
+    if (error) { setActionError(error.message); return; }
+    setNotes("");
     await refetchApprovals();
   };
 
   const handleAdvance = async (task: ProjectDetailRow["stage_tasks"][number]) => {
-    await completeTask(task);
+    setActionError(null);
+    const { error } = await completeTask(task);
+    if (error) { setActionError(error.message); return; }
     setPulseStage(task.stage);
     setTimeout(() => setPulseStage(null), 650);
   };
@@ -212,14 +230,20 @@ export default function ProjectDetail({
         <span>Deadline: {days == null ? "—" : days < 0 ? `T+${Math.abs(days)}D` : `T-${days}D`}</span>
       </div>
 
-      {["proposed", "on_hold"].includes(project.status) && (
+      {role === "ceo" && ["proposed", "on_hold"].includes(project.status) && (
         <div className="gateway-console">
           <span className="label">CEO Approval Gateway</span>
           <button className="btn btn-primary" onClick={() => decide("approve")}>Approve</button>
           <button className="btn" onClick={() => decide("hold")}>Hold</button>
           <button className="btn btn-danger" onClick={() => decide("reject")}>Reject</button>
+          <input
+            placeholder="Reason (sent with Hold/Reject)"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
         </div>
       )}
+      {actionError && <p className="error">{actionError}</p>}
 
       {project.stage_tasks.length > 0 && (
         <SignalChain
@@ -227,6 +251,8 @@ export default function ProjectDetail({
           tasks={project.stage_tasks}
           onAdvance={handleAdvance}
           pulseStage={pulseStage}
+          role={role}
+          myStage={myStage}
         />
       )}
 

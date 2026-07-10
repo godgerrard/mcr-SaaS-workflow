@@ -280,10 +280,10 @@ button:focus-visible {
   border: 1px solid transparent;
 }
 .status-pill.proposed { color: var(--tally-amber); border-color: var(--tally-amber-dim); background: var(--tally-amber-dim); }
-.status-pill.in_progress { color: var(--tally-red); border-color: var(--tally-red-dim); background: var(--tally-red-dim); }
-.status-pill.done { color: var(--tally-green); border-color: var(--tally-green-dim); background: var(--tally-green-dim); }
+.status-pill.in_progress, .status-pill.in_production { color: var(--tally-red); border-color: var(--tally-red-dim); background: var(--tally-red-dim); }
+.status-pill.done, .status-pill.complete { color: var(--tally-green); border-color: var(--tally-green-dim); background: var(--tally-green-dim); }
 .status-pill.rejected { color: var(--text-faint); border-color: var(--border); }
-.status-pill.hold { color: var(--tally-amber); border-color: var(--tally-amber-dim); }
+.status-pill.hold, .status-pill.on_hold { color: var(--tally-amber); border-color: var(--tally-amber-dim); }
 
 .vu {
   display: flex;

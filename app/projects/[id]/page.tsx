@@ -13,7 +13,7 @@ export default async function ProjectPage({
   if (!user) redirect("/login");
 
   const { data: membership } = await supabase
-    .from("org_members").select("org_id, role").limit(1).maybeSingle();
+    .from("org_members").select("org_id, role, stage").eq("user_id", user.id).limit(1).maybeSingle();
   if (!membership) redirect("/onboarding");
 
   const { data: project } = await supabase
@@ -23,5 +23,5 @@ export default async function ProjectPage({
     .maybeSingle();
   if (!project) notFound();
 
-  return <ProjectDetail project={project} role={membership.role} />;
+  return <ProjectDetail project={project} role={membership.role} myStage={membership.stage} />;
 }
