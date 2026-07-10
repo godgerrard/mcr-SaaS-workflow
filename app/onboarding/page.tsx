@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { STAGE_LABEL, type Stage } from "@/lib/stages";
 
-type PendingInvite = { org_name: string; role: string; stage: Stage | null };
+type PendingInvite = { org_id: string; org_name: string; role: string; stage: Stage | null };
 
 export default function Onboarding() {
-  const [invite, setInvite] = useState<PendingInvite | null>(null);
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [orgName, setOrgName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -17,16 +17,16 @@ export default function Onboarding() {
 
   useEffect(() => {
     supabase.rpc("my_pending_invite").then(({ data }) => {
-      setInvite(data?.[0] ?? null);
+      setInvites(data ?? []);
       setLoading(false);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const join = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const join = async (orgId: string) => {
     const { error } = await supabase.rpc("claim_invite", {
       p_display_name: displayName || null,
+      p_org: orgId,
     });
     if (error) setError(error.message);
     else router.push("/");
@@ -43,20 +43,22 @@ export default function Onboarding() {
 
   if (loading) return <main className="auth-page" />;
 
-  if (invite) {
+  if (invites.length > 0) {
     return (
       <main className="auth-page">
-        <h1>Join {invite.org_name}</h1>
-        <p>
-          You&apos;ve been invited to join {invite.org_name} as {invite.role}
-          {invite.stage ? ` (${STAGE_LABEL[invite.stage]})` : ""}
-        </p>
-        <form onSubmit={join}>
-          <input required placeholder="Your display name"
-            value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          <button type="submit" className="btn btn-primary">Join</button>
-          {error && <p className="error">{error}</p>}
-        </form>
+        <h1>You&apos;ve been invited</h1>
+        <input required placeholder="Your display name"
+          value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        {invites.map((invite) => (
+          <p key={invite.org_id}>
+            Join {invite.org_name} as {invite.role}
+            {invite.stage ? ` (${STAGE_LABEL[invite.stage]})` : ""}{" "}
+            <button type="button" className="btn btn-primary" onClick={() => join(invite.org_id)}>
+              Join
+            </button>
+          </p>
+        ))}
+        {error && <p className="error">{error}</p>}
       </main>
     );
   }

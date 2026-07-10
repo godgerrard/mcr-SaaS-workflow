@@ -35,26 +35,41 @@ export default function RundownRow({
   project,
   index,
   onAction,
+  role,
+  myStage,
 }: {
   project: Project;
   index: number;
   onAction: () => void;
+  role: string;
+  myStage: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pulseStage, setPulseStage] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const meta = STATUS_META[project.status] ?? { label: project.status, tally: "off" };
   const supabase = createClient();
 
   const decide = async (decision: "approve" | "reject" | "hold", e: React.MouseEvent) => {
     e.stopPropagation();
-    if (decision === "approve") await supabase.rpc("approve_project", { p_project: project.id });
-    if (decision === "reject") await supabase.rpc("reject_project", { p_project: project.id, p_notes: null });
-    if (decision === "hold") await supabase.rpc("hold_project", { p_project: project.id, p_notes: null });
+    setActionError(null);
+    const p_notes = notes.trim() || null;
+    const { error } =
+      decision === "approve"
+        ? await supabase.rpc("approve_project", { p_project: project.id })
+        : decision === "reject"
+          ? await supabase.rpc("reject_project", { p_project: project.id, p_notes })
+          : await supabase.rpc("hold_project", { p_project: project.id, p_notes });
+    if (error) { setActionError(error.message); return; }
+    setNotes("");
     onAction();
   };
 
   const handleAdvance = async (task: Project["stage_tasks"][number]) => {
-    await completeTask(task);
+    setActionError(null);
+    const { error } = await completeTask(task);
+    if (error) { setActionError(error.message); return; }
     setPulseStage(task.stage);
     setTimeout(() => setPulseStage(null), 650);
     onAction();
@@ -84,7 +99,7 @@ export default function RundownRow({
 
       {open && (
         <div className="row-detail">
-          {["proposed", "on_hold"].includes(project.status) && (
+          {role === "ceo" && ["proposed", "on_hold"].includes(project.status) && (
             <div className="gateway-console">
               <span className="label">CEO Approval Gateway</span>
               <button className="btn btn-primary" onClick={(e) => decide("approve", e)}>
@@ -96,14 +111,23 @@ export default function RundownRow({
               <button className="btn btn-danger" onClick={(e) => decide("reject", e)}>
                 Reject
               </button>
+              <input
+                placeholder="Reason (sent with Hold/Reject)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+              />
             </div>
           )}
+          {actionError && <p className="error">{actionError}</p>}
           {project.stage_tasks.length > 0 && (
             <SignalChain
               project={project}
               tasks={project.stage_tasks}
               onAdvance={handleAdvance}
               pulseStage={pulseStage}
+              role={role}
+              myStage={myStage}
             />
           )}
         </div>

@@ -29,7 +29,7 @@ Convention: anything non-blocking discovered during a session gets added here in
 ## Phase 5 (assets) — noticed, parked
 - **Orphaned storage objects on seed wipe** — `npm run seed` wipes demo orgs in the DB but not their `{org_id}/…` prefixes in the `assets` bucket; probe files accumulate as invisible junk over many runs. Add a storage purge to the seed wipe if it ever matters.
 - **Section-8 probe files persist between runs** — cleanup is at section start (so re-runs survive mid-section failures); `sec8-*.txt` stay visible in the demo UI until the next run. Harmless.
-- **Crew see empty Budget/Approvals sections on project detail** — pre-existing Phase 2 layout: RLS returns zero rows so crew get empty-state headers (and an ADD ENTRY button whose insert RLS would reject). Cosmetic; hide sections by role if a pilot crew member finds it confusing.
+- **Crew see empty Budget/Approvals sections on project detail** — pre-existing Phase 2 layout: RLS returns zero rows so crew get empty-state headers (the Add-entry form is already role-gated away from crew). Cosmetic; hide sections by role if a pilot crew member finds it confusing.
 - **Asset delete/replace UI** — assets are immutable by design (no update/delete storage policies); build delete/replace when a pilot user asks.
 - **Next.js dev-overlay "1 Issue" badge on the rundown page** — dev-only, console clean; check during Phase 6 hardening.
 

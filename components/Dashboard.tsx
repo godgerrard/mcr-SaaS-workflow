@@ -27,16 +27,19 @@ function NewSegmentForm({ onCreated }: { onCreated: () => void }) {
   const [title, setTitle] = useState("");
   const [client, setClient] = useState("");
   const [budget, setBudget] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
   const supabase = createClient();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    await supabase.rpc("create_project", {
+    setFormError(null);
+    const { error } = await supabase.rpc("create_project", {
       p_title: title,
       p_client: client || null,
       p_budget: Number(budget) || 0,
     });
+    if (error) { setFormError(error.message); return; }
     setTitle("");
     setClient("");
     setBudget("");
@@ -59,11 +62,12 @@ function NewSegmentForm({ onCreated }: { onCreated: () => void }) {
       <input name="budget" type="number" placeholder="Budget" value={budget} onChange={(e) => setBudget(e.target.value)} />
       <button className="btn btn-primary" type="submit">Submit</button>
       <button className="btn" type="button" onClick={() => setOpen(false)}>Cancel</button>
+      {formError && <p className="error">{formError}</p>}
     </form>
   );
 }
 
-export default function Dashboard({ role }: { role: string }) {
+export default function Dashboard({ role, myStage }: { role: string; myStage: string | null }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
@@ -169,7 +173,7 @@ export default function Dashboard({ role }: { role: string }) {
 
       <div className="rundown">
         {projects.map((p, i) => (
-          <RundownRow key={p.id} project={p} index={i} onAction={load} />
+          <RundownRow key={p.id} project={p} index={i} onAction={load} role={role} myStage={myStage} />
         ))}
       </div>
     </div>

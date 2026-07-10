@@ -7,7 +7,7 @@ export default async function Home() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data: membership } = await supabase
-    .from("org_members").select("org_id, role").limit(1).maybeSingle();
+    .from("org_members").select("org_id, role, stage").eq("user_id", user.id).limit(1).maybeSingle();
   if (!membership) redirect("/onboarding");
-  return <Dashboard role={membership.role} />;
+  return <Dashboard role={membership.role} myStage={membership.stage} />;
 }
